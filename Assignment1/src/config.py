@@ -6,6 +6,7 @@
 
 # All paths are relative to src directory
 PATHS = {
+    "WINE_RED_DATA": "../data/Wine Quality Ratings and Chemicals/winequality-red.csv"
 }
 
 ERRORS = {

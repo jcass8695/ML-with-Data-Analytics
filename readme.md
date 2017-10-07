@@ -1,4 +1,4 @@
-# Assignment 1 CS4404
+# Assignments for CS4404
 ## By Jack Cassidy, Hugh Lavery and Daniel Lavelle
 
 ### File Structure:

@@ -1,1 +1,5 @@
-.vscode
+*.vscode
+*.pyc
+__pycache__
+Datasets
+Assignment1/data
