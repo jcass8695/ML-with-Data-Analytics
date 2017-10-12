@@ -1,4 +1,4 @@
-#Assignment 1 - Task 2 Checklist, for Dan and Jack
+# Assignment 1 - Task 2 Checklist, for Dan and Jack
 ### Cross off as we go along (surround text with ~~ ~~)
 
 1. General
