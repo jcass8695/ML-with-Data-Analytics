@@ -15,7 +15,8 @@ PATHS = {
 
 FLAGS = {
     'SEVENTY_THIRTY': 1,
-    'TEN_FOLD_CROSS': 2
+    'TEN_FOLD_CROSS': 2,
+    'LINEAR_REGRESSION': 3
 }
 
 

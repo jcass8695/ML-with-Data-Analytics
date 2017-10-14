@@ -22,64 +22,35 @@ def main():
         names=CSV_COLUMNS,
         sep=';'
     )
+
     # Split the dataset into training and testing
     # Leave out the Instances column
     df_training, df_testing = split_data_frame(df, cf.FLAGS['SEVENTY_THIRTY'])
 
-    # Format the categorical class values into integer representations
-    # Note indexing a pandas DataFrame like this returns a Series object
-    train_labels_regression = df_training['Target']
-    train_label_classification = (df_training['Target_Class']
-                                  .apply(lambda x:
-                                         {
-                                             'Very Small Number': 1,
-                                             'Small Number': 2,
-                                             'Medium Number': 3,
-                                             'Large Number': 4,
-                                             'Very Large Number': 5
-                                         }[x]
-                                         ))
-
-    test_label_regression = df_testing['Target']
-    test_label_classification = (df_testing['Target_Class']
-                                 .apply(lambda x:
-                                        {
-                                            'Very Small Number': 1,
-                                            'Small Number': 2,
-                                            'Medium Number': 3,
-                                            'Large Number': 4,
-                                            'Very Large Number': 5
-                                        }[x]
-                                        ))
+    # Get the label columns, the output vectors in Tensor Flow terminology
+    train_label_regression, test_label_regression = build_regression_labels(
+        df_training,
+        df_testing
+    )
 
     # Build TF feature columns
     base_feature_columns = build_feature_columns()
 
     # Build training and testing input function
-    training_input_fn = tf.estimator.inputs.pandas_input_fn(
-        x=df_training,
-        y=train_labels_regression,
-        shuffle=False
+    training_input_fn, testing_input_fn = build_regression_input_functions(
+        df_training,
+        df_testing,
+        train_label_regression,
+        test_label_regression
     )
 
-    testing_input_fn = tf.estimator.inputs.pandas_input_fn(
-        x=df_testing,
-        y=test_label_regression,
-        shuffle=False
+    # Do that ML
+    evaluate_model(
+        base_feature_columns,
+        cf.FLAGS['LINEAR_REGRESSION'],
+        training_input_fn,
+        testing_input_fn
     )
-
-    model = tf.estimator.LinearRegressor(
-        model_dir=tempfile.mkdtemp(),
-        feature_columns=base_feature_columns
-    )
-
-    model.train(
-        input_fn=training_input_fn
-    )
-
-    results = model.evaluate(input_fn=testing_input_fn)
-    for key in sorted(results):
-        print('%s: %s' % (key, results[key]))
 
 
 def split_data_frame(df, split_type):
@@ -92,6 +63,37 @@ def split_data_frame(df, split_type):
     elif split_type is cf.FLAGS['TEN_FOLD_CROSS']:
         # TODO: implement 10 fold
         return None, None
+
+
+def build_regression_labels(df_training, df_testing):
+    return df_training['Target'], df_testing['Target']
+
+
+def build_classification_labels(df_training, df_testing):
+    # Format the categorical class values into integer representations
+    # Note indexing a pandas DataFrame like this returns a Series object
+    train = (df_training['Target_Class']
+             .apply(lambda x:
+                    {
+                        'Very Small Number': 1,
+                        'Small Number': 2,
+                        'Medium Number': 3,
+                        'Large Number': 4,
+                        'Very Large Number': 5
+                    }[x]
+                    ))
+
+    test = (df_testing['Target_Class']
+            .apply(lambda x:
+                   {
+                       'Very Small Number': 1,
+                       'Small Number': 2,
+                       'Medium Number': 3,
+                       'Large Number': 4,
+                       'Very Large Number': 5
+                   }[x]
+                   ))
+    return train, test
 
 
 def build_feature_columns():
@@ -107,6 +109,37 @@ def build_feature_columns():
     feature10 = tf.feature_column.numeric_column('Feature_10')
     return [feature1, feature2, feature3, feature4, feature5,
             feature6, feature7, feature8, feature9, feature10]
+
+
+def build_regression_input_functions(df_training, df_testing, training_label, testing_label):
+    training_input_fn = tf.estimator.inputs.pandas_input_fn(
+        x=df_training,
+        y=training_label,
+        shuffle=False
+    )
+
+    testing_input_fn = tf.estimator.inputs.pandas_input_fn(
+        x=df_testing,
+        y=testing_label,
+        shuffle=False
+    )
+
+    return training_input_fn, testing_input_fn
+
+
+def evaluate_model(feature_columns, model_type, training_input_fn, testing_input_fn):
+    if model_type is cf.FLAGS['LINEAR_REGRESSION']:
+        model = tf.estimator.LinearRegressor(
+            model_dir=tempfile.mkdtemp(),
+            feature_columns=feature_columns
+        )
+
+    # TODO: implement other algorithms and add to config file
+
+    model.train(input_fn=training_input_fn)
+    results = model.evaluate(input_fn=testing_input_fn)
+    for key in sorted(results):
+        print('%s: %s' % (key, results[key]))
 
 
 main()
