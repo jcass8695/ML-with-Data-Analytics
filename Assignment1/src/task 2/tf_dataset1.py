@@ -8,7 +8,6 @@ import config as cf
 
 import pandas as pd
 import tensorflow as tf
-import numpy as np
 
 
 def main():
@@ -24,7 +23,6 @@ def main():
     )
 
     # Split the dataset into training and testing
-    # Leave out the Instances column
     df_training, df_testing = split_data_frame(df, cf.FLAGS['SEVENTY_THIRTY'])
 
     # Get the label columns, the output vectors in Tensor Flow terminology
@@ -35,6 +33,8 @@ def main():
 
     # Build TF feature columns
     base_feature_columns = build_feature_columns()
+
+    # TODO: implement 10 fold model training and evaluation
 
     # Build training and testing input function
     training_input_fn, testing_input_fn = build_regression_input_functions(
@@ -54,15 +54,27 @@ def main():
 
 
 def split_data_frame(df, split_type):
+    df_depth = int(df.shape[0])
     if split_type is cf.FLAGS['SEVENTY_THIRTY']:
-        split = int(df.shape[0] * 0.7)
+        split = int(df_depth * 0.7)
         df_training = df.iloc[:split, 1:]
         df_testing = df.iloc[split:, 1:]
         return df_training, df_testing
 
     elif split_type is cf.FLAGS['TEN_FOLD_CROSS']:
-        # TODO: implement 10 fold
-        return None, None
+        df_testing = []
+        df_training = []
+        split = int(df_depth / 10)
+        for i in range(10):
+            # Note there is a loss of accuracy here converting float to integer
+            # The final cross validation set will not reach the final row but each set size is consistent
+            test_range = list(range(i * split, (i + 1) * split))
+            full_range = list(range(0, df_depth))
+            training_range = list(set(full_range) - set(test_range))
+            df_testing.append(df.iloc[test_range, 1:])
+            df_training.append(df.iloc[training_range, 1:])
+
+        return df_training, df_testing
 
 
 def build_regression_labels(df_training, df_testing):
@@ -135,7 +147,6 @@ def evaluate_model(feature_columns, model_type, training_input_fn, testing_input
         )
 
     # TODO: implement other algorithms and add to config file
-
     model.train(input_fn=training_input_fn)
     results = model.evaluate(input_fn=testing_input_fn)
     for key in sorted(results):
