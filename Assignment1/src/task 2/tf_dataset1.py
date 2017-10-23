@@ -14,7 +14,7 @@ import tensorflow as tf
 # Disable TF warning
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-SPLIT_METHOD = cf.FLAGS['TEN_FOLD_CROSS']
+SPLIT_METHOD = cf.FLAGS['SEVENTY_THIRTY']
 ALGORITHM = cf.FLAGS['LINEAR_REGRESSION']
 
 
@@ -56,13 +56,15 @@ def main():
         )
 
         # Do that ML
-        evaluate_model(
+        y_pred = evaluate_model(
             base_feature_columns,
             ALGORITHM,
             training_input_fn,
             testing_input_fn,
             SPLIT_METHOD
         )
+
+        mean_square_error(y_pred, test_label_regression)
 
 
 def split_data_frame(df, split_type):
@@ -206,9 +208,12 @@ def evaluate_model(feature_columns, model_type, training_input_fn, testing_input
     start = timer()
     if split_type == cf.FLAGS['SEVENTY_THIRTY']:
         model.train(input_fn=training_input_fn)
-        results = model.evaluate(input_fn=testing_input_fn)
-        for key in sorted(results):
-            print('{}: {}'.format(key, results[key]))
+        y_pred_dict = model.predict(input_fn=testing_input_fn)
+        y_pred_list = []
+        for pred in y_pred_dict:
+            y_pred_list.append(pred.get('predictions')[0])
+
+        return y_pred_list
 
     elif split_type == cf.FLAGS['TEN_FOLD_CROSS']:
         for index, value in enumerate(training_input_fn):
@@ -224,6 +229,15 @@ def evaluate_model(feature_columns, model_type, training_input_fn, testing_input
 
     end = timer()
     print('Time taken: {}'.format(end - start))
+
+
+def mean_square_error(y_pred, y_true):
+    mse = 0
+    n_instances = len(y_pred)
+    for pred, truth in zip(y_pred, y_true):
+        mse += (pred - truth)**2
+
+    print(mse / n_instances)
 
 
 main()
