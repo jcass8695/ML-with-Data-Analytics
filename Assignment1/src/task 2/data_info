@@ -1,2 +1,15 @@
 Dataset 1- SUM w/o noise
 Dataset 2- House Sales in King County
+
+Algorithms:
+Linear Regression
+	Metrics: 
+	RMSE
+	Variance
+
+K nearest neighbours
+	Metrics:
+
+Random Forest:
+	Metrics:
+
