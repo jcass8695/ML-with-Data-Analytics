@@ -17,22 +17,29 @@ from statistics import mean
 # Disable TF warning
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
+# DATASET = 'SUMDATA_NOISELESS'
+DATASET = 'HOUSE_DATA'
 SPLIT_METHOD = cf.FLAGS['TEN_FOLD_CROSS']
 # SPLIT_METHOD = cf.FLAGS['SEVENTY_THIRTY']
 ALGORITHM = cf.FLAGS['LINEAR_REGRESSION']
 # ALGORITHM = ''
+
 LEARNING_RATE = 0.01
 EPOCHS = 100
-display_step = 50
 
 
 def main():
+    if DATASET == 'SUMDATA_NOISELESS':
+        sep = ';'
+
+    else:
+        sep = ','
+
     # Read in full dataset and convert to numpy array
     dataset = pd.read_csv(
-        cf.PATHS['SUMDATA_NOISELESS'],
+        cf.PATHS[DATASET],
         header=0,
-        names=cf.CSV_COLUMNS_SUM,
-        sep=';'
+        sep=sep
     ).values
 
     # Split the dataset into training and testing arrays
@@ -73,25 +80,40 @@ def main():
 
 
 def split_data_frame(dataset):
-    # Reduce number of instances to 100,000
-    # And get rid of 'Instances' feature column
-    dataset = np.delete(dataset, np.arange(100000, dataset.shape[0]), axis=0)
-    dataset = np.delete(dataset, 0, axis=1)
-    n_instances = dataset.shape[0]
+    if DATASET == 'SUMDATA_NOISELESS':
+        # Reduce number of instances to 100,000
+        dataset = np.delete(
+            dataset,
+            np.arange(100000, dataset.shape[0]),
+            axis=0
+        )
 
-    # Delete output columns for Design Matrix X
-    x = np.delete(dataset, range(10, 12), axis=1)
+        # Get rid of 'Instances' feature column
+        dataset = np.delete(dataset, 0, axis=1)
 
-    # Delete all feature columns for Output Matrix Y
-    y = np.delete(dataset, range(10), axis=1)
+        # Delete unessecary columns from X and Y
+        x = np.delete(dataset, range(10, 12), axis=1)
+        y = np.delete(dataset, range(10), axis=1)
 
-    # If linear regression take the 'Target' columns otherwise take the classification labels
-    if ALGORITHM == cf.FLAGS['LINEAR_REGRESSION']:
-        y = np.delete(y, 1, axis=1)
+        # If linear regression take the 'Target' columns otherwise take the classification label
+        if ALGORITHM == cf.FLAGS['LINEAR_REGRESSION']:
+            y = np.delete(y, 1, axis=1)
+
+        else:
+            y = np.delete(y, 0, axis=1)
+            y = convert_classification_labels(y)
 
     else:
-        y = np.delete(y, 0, axis=1)
-        y = convert_classification_labels(y)
+        # Remove 'id' and 'date' feature columns
+        dataset = np.delete(dataset, [0, 1], axis=1)
+
+        # Remove unecessary columns from X and Y
+        x = np.delete(dataset, 0, axis=1)
+        y = np.delete(dataset, range(1, 19), axis=1)
+
+        # TODO: Find a classification feature
+
+    n_instances = dataset.shape[0]
 
     # First, normalize the datasets before splitting
     x = scale(x, axis=0)
