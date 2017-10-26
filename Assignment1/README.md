@@ -3,10 +3,11 @@
 
 1. General
    - ~~choose datasets~~ SUM w/o noise + NY Taxi 
-~~2. scikit-learn dataset 1
+2. ~~scikit-learn dataset 1
    - metric 1 70/30
    - metric 1 10-fold
-   - metric 2 70/30~~
+   - metric 2 70/30
+   - metric 2 10-fold~~
 3. scikit-learn dataset 2 
    - metric 1 70/30
    - metric 1 10-fold
