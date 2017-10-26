@@ -4,7 +4,7 @@ Dataset 2- House Sales in King County - 10,000
 Algorithms:
 Linear Regression
 	Metrics: 
-	MSE
+	RMSE
 	Mean Absolute Error
 
 K nearest neighbours:
