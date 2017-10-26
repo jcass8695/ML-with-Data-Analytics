@@ -4,226 +4,204 @@ Tensorflow dataset 1
 '''
 
 import os
-from timeit import default_timer as timer
 
 import tempfile
 import config as cf
+import numpy as np
 import pandas as pd
 import tensorflow as tf
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import scale
+from statistics import mean
 
 # Disable TF warning
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 SPLIT_METHOD = cf.FLAGS['TEN_FOLD_CROSS']
+# SPLIT_METHOD = cf.FLAGS['SEVENTY_THIRTY']
 ALGORITHM = cf.FLAGS['LINEAR_REGRESSION']
+# ALGORITHM = ''
+LEARNING_RATE = 0.01
+EPOCHS = 100
+display_step = 50
 
 
 def main():
-    # Read in full dataset
-    df = pd.read_csv(
+    # Read in full dataset and convert to numpy array
+    dataset = pd.read_csv(
         cf.PATHS['SUMDATA_NOISELESS'],
         header=0,
         names=cf.CSV_COLUMNS_SUM,
         sep=';'
-    )
+    ).values
+
+    # Split the dataset into training and testing arrays
+    # Will return lists of size 10 if using 10 fold cross validation
+    x_train, x_test, y_train, y_test = split_data_frame(dataset)
 
     if ALGORITHM == cf.FLAGS['LINEAR_REGRESSION']:
-        # Split the dataset into training and testing
-        # Will return a list of size 10 if using 10 fold cross validation
-        df_training, df_testing = split_data_frame(df, SPLIT_METHOD)
+        mse = 0
+        mae = 0
+        if SPLIT_METHOD == cf.FLAGS['TEN_FOLD_CROSS']:
+            for i in range(10):
+                mse += linear_regression_training(
+                    x_train[i],
+                    x_test[i],
+                    y_train[i],
+                    y_test[i]
+                )[0]
 
-        # Get the label columns, the output vectors in Tensor Flow terminology
-        # Will return a list of size 10 if using 10 fold cross validation
-        train_label_regression, test_label_regression = build_regression_labels(
-            df_training,
-            df_testing,
-            SPLIT_METHOD
-        )
+                mae += linear_regression_training(
+                    x_train[i],
+                    x_test[i],
+                    y_train[i],
+                    y_test[i]
+                )[1]
 
-        # Build TF feature columns
-        # Will NOT return a list, feature cols constant and independant of
-        # Splitting method
-        base_feature_columns = build_feature_columns()
+            print('Average MSE across 10 folds: {}'.format(mse / 10))
+            print('Average MAE across 10 folds: {}'.format(mae / 10))
 
-        # Build training and testing input function
-        # Will return a list of size 10 if using 10 fold cross validation
-        training_input_fn, testing_input_fn = build_regression_input_functions(
-            df_training,
-            df_testing,
-            train_label_regression,
-            test_label_regression,
-            SPLIT_METHOD
-        )
-
-        # Do that ML
-        evaluate_model(
-            base_feature_columns,
-            ALGORITHM,
-            training_input_fn,
-            testing_input_fn,
-            SPLIT_METHOD
-        )
+        else:
+            mse, mae = linear_regression_training(
+                x_train,
+                x_test,
+                y_train,
+                y_test
+            )
+            print('MSE: {}'.format(mse))
+            print('MAE: {}'.format(mae))
 
 
-def split_data_frame(df, split_type):
-    df_depth = int(df.shape[0])
-    if split_type is cf.FLAGS['SEVENTY_THIRTY']:
-        split = int(df_depth * 0.7)
-        df_training = df.iloc[:split, 1:]
-        df_testing = df.iloc[split:, 1:]
+def split_data_frame(dataset):
+    # Reduce number of instances to 100,000
+    # And get rid of 'Instances' feature column
+    dataset = np.delete(dataset, np.arange(100000, dataset.shape[0]), axis=0)
+    dataset = np.delete(dataset, 0, axis=1)
+    n_instances = dataset.shape[0]
 
-    elif split_type is cf.FLAGS['TEN_FOLD_CROSS']:
-        df_training = []
-        df_testing = []
-        split = int(df_depth / 10)
+    # Delete output columns for Design Matrix X
+    x = np.delete(dataset, range(10, 12), axis=1)
 
-        # Split training and testing set into 10 separate sets
-        for i in range(10):
-            # Note there is a loss of accuracy here converting float to integer
-            # The final cross validation set will not reach the final row but
-            # each set size is consistent
-            test_range = list(range(i * split, (i + 1) * split))
-            full_range = list(range(0, df_depth))
-            training_range = list(set(full_range) - set(test_range))
-            df_training.append(df.iloc[training_range, 1:])
-            df_testing.append(df.iloc[test_range, 1:])
+    # Delete all feature columns for Output Matrix Y
+    y = np.delete(dataset, range(10), axis=1)
+
+    # If linear regression take the 'Target' columns otherwise take the classification labels
+    if ALGORITHM == cf.FLAGS['LINEAR_REGRESSION']:
+        y = np.delete(y, 1, axis=1)
+
+    else:
+        y = np.delete(y, 0, axis=1)
+        y = convert_classification_labels(y)
+
+    # First, normalize the datasets before splitting
+    x = scale(x, axis=0)
+    y = scale(y, axis=0)
+
+    # Prepend the Bias feature column consisting of all 1's
+    x = np.reshape(
+        np.c_[np.ones(x.shape[0]), x],
+        [x.shape[0], x.shape[1] + 1]
+    )
+    y = np.reshape(y, [x.shape[0], 1])
+
+    if SPLIT_METHOD is cf.FLAGS['SEVENTY_THIRTY']:
+        return seventy_thirty(x, y, n_instances)
+
+    elif SPLIT_METHOD is cf.FLAGS['TEN_FOLD_CROSS']:
+        return ten_fold_cross(x, y, n_instances)
 
     else:
         raise Exception('split_data_frame: no split_type set')
 
-    return df_training, df_testing
+
+def seventy_thirty(x, y, n_instances):
+    split = int(n_instances * 0.7)
+    x_train = x[0:split]
+    x_test = x[split:n_instances]
+    y_train = y[0:split]
+    y_test = y[split:n_instances]
+    return x_train, x_test, y_train, y_test
 
 
-def build_regression_labels(df_training, df_testing, split_type):
-    if split_type == cf.FLAGS['SEVENTY_THIRTY']:
-        return df_training['Target'], df_testing['Target']
+def ten_fold_cross(x, y, n_instances):
+    x_train = []
+    x_test = []
+    y_train = []
+    y_test = []
+    split = int(n_instances / 10)
+    print(n_instances)
+    for i in range(10):
+        # Note there is a loss of accuracy here converting float to integer
+        # The final cross validation set will not reach the final row but
+        # each set size is consistent
+        test_range = list(range(i * split, (i + 1) * split))
+        full_range = list(range(0, n_instances))
 
-    elif split_type == cf.FLAGS['TEN_FOLD_CROSS']:
-        training_label_list = []
-        testing_label_list = []
-        for value in df_training:
-            training_label_list.append(value['Target'])
+        # training_range and test_range are the lists of indices from the whole set of instances
+        # to use as the training set for this fold
+        training_range = list(set(full_range) - set(test_range))
+        x_train.append(x[training_range])
+        x_test.append(x[test_range])
+        y_train.append(y[training_range])
+        y_test.append(y[test_range])
 
-        for value in df_testing:
-            testing_label_list.append(value['Target'])
-
-        return training_label_list, testing_label_list
-
-    else:
-        raise Exception('build_regression_labels: no split_type set')
-
-
-def build_classification_labels(df_training, df_testing):
-    # Format the categorical class values into integer representations
-    # Note indexing a pandas DataFrame like this returns a Series object
-    train = (df_training['Target_Class']
-             .apply(lambda x:
-                    {
-                        'Very Small Number': 1,
-                        'Small Number': 2,
-                        'Medium Number': 3,
-                        'Large Number': 4,
-                        'Very Large Number': 5
-                    }[x]
-                    ))
-
-    test = (df_testing['Target_Class']
-            .apply(lambda x:
-                   {
-                       'Very Small Number': 1,
-                       'Small Number': 2,
-                       'Medium Number': 3,
-                       'Large Number': 4,
-                       'Very Large Number': 5
-                   }[x]
-                   ))
-    return train, test
+    return x_train, x_test, y_train, y_test
 
 
-def build_feature_columns():
-    feature1 = tf.feature_column.numeric_column('Feature_1')
-    feature2 = tf.feature_column.numeric_column('Feature_2')
-    feature3 = tf.feature_column.numeric_column('Feature_3')
-    feature4 = tf.feature_column.numeric_column('Feature_4')
-    feature5 = tf.feature_column.numeric_column('Feature_5')
-    feature6 = tf.feature_column.numeric_column('Feature_6')
-    feature7 = tf.feature_column.numeric_column('Feature_7')
-    feature8 = tf.feature_column.numeric_column('Feature_8')
-    feature9 = tf.feature_column.numeric_column('Feature_9')
-    feature10 = tf.feature_column.numeric_column('Feature_10')
-    return [feature1, feature2, feature3, feature4, feature5,
-            feature6, feature7, feature8, feature9, feature10]
+def convert_classification_labels(y_data):
+    vfunc = np.vectorize(lambda x:
+                         {
+                             'Very Small Number': 1,
+                             'Small Number': 2,
+                             'Medium Number': 3,
+                             'Large Number': 4,
+                             'Very Large Number': 5
+                         }[x])
+    return vfunc(y_data)
 
 
-def build_regression_input_functions(df_training, df_testing, training_label, testing_label, split_type):
-    if split_type == cf.FLAGS['SEVENTY_THIRTY']:
-        training_input_fn = tf.estimator.inputs.pandas_input_fn(
-            x=df_training,
-            y=training_label,
-            shuffle=False
-        )
+def linear_regression_training(x_train, x_test, y_train, y_test):
+    # TF Graph inputs
+    # Take each row (instance) in x dataset
+    X = tf.placeholder(tf.float32, shape=[None, x_train.shape[1]], name='X')
 
-        testing_input_fn = tf.estimator.inputs.pandas_input_fn(
-            x=df_testing,
-            y=testing_label,
-            shuffle=False
-        )
+    # Take it's corresponding y output value
+    Y = tf.placeholder(tf.float32, shape=[None, y_train.shape[1]], name='Y')
 
-    elif split_type == cf.FLAGS['TEN_FOLD_CROSS']:
-        training_input_fn = []
-        testing_input_fn = []
-        for index, value in enumerate(df_training):
-            training_input_fn.append(tf.estimator.inputs.pandas_input_fn(
-                x=value,
-                y=training_label[index],
-                shuffle=False
-            ))
+    # Create a column vector (no.features x 1) of weights
+    W = tf.Variable(tf.ones([x_train.shape[1], 1], name='W'))
 
-        for index, value in enumerate(df_testing):
-            testing_input_fn.append(tf.estimator.inputs.pandas_input_fn(
-                x=value,
-                y=testing_label[index],
-                shuffle=False
-            ))
+    # For each instance calculate the predicted value
+    pred = tf.matmul(X, W)
 
-    else:
-        raise Exception('build_regression_input_functions: no split_type set')
+    # At each prediction calculate the mean squared error
+    cost = tf.reduce_mean(tf.square(pred - Y))
 
-    return training_input_fn, testing_input_fn
+    # Optimize the weights after each prediction so as to minimize the MSE
+    optimizer = tf.train.GradientDescentOptimizer(LEARNING_RATE).minimize(cost)
+    init = tf.global_variables_initializer()
+
+    # Start Training
+    with tf.Session() as sess:
+        sess.run(init)
+        run_optimization(sess, optimizer, x_train, y_train, X, Y)
+        mse, mae = evaluate_accuracy(sess, pred, x_test, y_test, X)
+
+        sess.close()
+        return mse, mae
 
 
-def evaluate_model(feature_columns, model_type, training_input_fn, testing_input_fn, split_type):
-    # TODO: implement other algorithms and add to config file
-    if model_type == cf.FLAGS['LINEAR_REGRESSION']:
-        model = tf.estimator.LinearRegressor(
-            model_dir=tempfile.mkdtemp(),
-            feature_columns=feature_columns
-        )
-
-    else:
-        raise Exception('evaluate_model: no model_type set')
-
-    start = timer()
-    if split_type == cf.FLAGS['SEVENTY_THIRTY']:
-        model.train(input_fn=training_input_fn)
-        results = model.evaluate(input_fn=testing_input_fn)
-        for key in sorted(results):
-            print('{}: {}'.format(key, results[key]))
-
-    elif split_type == cf.FLAGS['TEN_FOLD_CROSS']:
-        for index, value in enumerate(training_input_fn):
-            model.train(input_fn=value)
-            results = model.evaluate(input_fn=testing_input_fn[index])
-
-            print('10-Fold-Cross Iteration {}'.format(index + 1))
-            for key in sorted(results):
-                print('{}: {}'.format(key, results[key]))
-
-    else:
-        raise Exception('evaluate_model: no split_type set')
-
-    end = timer()
-    print('Time taken: {}'.format(end - start))
+def run_optimization(sess, optimizer, x_train, y_train, X, Y):
+    for _ in range(EPOCHS):
+        sess.run(optimizer, feed_dict={X: x_train, Y: y_train})
 
 
-main()
+def evaluate_accuracy(sess, pred, x_test, y_test, X):
+    y_pred = sess.run(pred, feed_dict={X: x_test})
+    mse = tf.reduce_mean(tf.square(y_pred - y_test))
+    mae = tf.reduce_mean(tf.abs(y_pred - y_test))
+    return sess.run(mse), sess.run(mae)
+
+
+if __name__ == "__main__":
+    main()
