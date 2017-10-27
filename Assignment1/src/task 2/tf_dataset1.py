@@ -9,17 +9,15 @@ import config as cf
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import matplotlib.pyplot as plt
 from sklearn.preprocessing import scale
-from itertools import chain
 
 # Disable TF warning
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-DATASET = cf.SUM_WITHOUT_NOISE
+DATASET = cf.SUM_WITH_NOISE
 # DATASET = cf.HOUSE_PRICES
-SPLIT_METHOD = cf.SEVENTY_THIRTY
-# SPLIT_METHOD = cf.TEN_FOLD_CROSS
+# SPLIT_METHOD = cf.SEVENTY_THIRTY
+SPLIT_METHOD = cf.TEN_FOLD_CROSS
 # ALGORITHM = cf.LINEAR_REG
 ALGORITHM = cf.KNN
 
@@ -28,7 +26,7 @@ EPOCHS = cf.EPOCHS
 
 
 def main():
-    if DATASET == cf.SUM_WITHOUT_NOISE:
+    if DATASET == cf.SUM_WITH_NOISE:
         sep = cf.SUM_CSV_SEP
 
     else:
@@ -96,6 +94,8 @@ def main():
                     y_test[i]
                 )[1]
 
+                print('Fold: {}'.format(i + 1))
+
             print('Average accuracy across 10 folds: {}'.format(accuracy * 10))
             print('Average F1 across 10 folds: {}'.format(f1 / 10))
 
@@ -112,40 +112,10 @@ def main():
 
 
 def split_data_frame(dataset):
-    if DATASET == cf.SUM_WITHOUT_NOISE:
-        # Reduce number of instances to 100,000
-        dataset = np.delete(
-            dataset,
-            np.arange(100000, dataset.shape[0]),
-            axis=0
-        )
-
-        # Get rid of 'Instances' feature column
-        dataset = np.delete(dataset, 0, axis=1)
-
-        # Delete unecessary columns from X and Y
-        x = np.delete(dataset, range(10, 12), axis=1)
-        y = np.delete(dataset, range(10), axis=1)
-
-        # If linear regression take the 'Target' column otherwise take the
-        # 'Target Class' classification label
-        if ALGORITHM == cf.LINEAR_REG:
-            y = np.delete(y, 1, axis=1)
-
-        else:
-            y = np.delete(y, 0, axis=1)
-            y = convert_classification_label_for_SUM(y)
-
+    if DATASET == cf.SUM_WITH_NOISE:
+        x, y, dataset = format_sum_dataset(dataset)
     else:
-        # Remove 'id' and 'date' feature columns
-        dataset = np.delete(dataset, [0, 1], axis=1)
-
-        # Remove 'price' feature from X and everything but price from y
-        x = np.delete(dataset, 0, axis=1)
-        y = np.delete(dataset, range(1, 19), axis=1)
-        if ALGORITHM == cf.KNN:
-            y = convert_classification_label_for_housing(y)
-            print(y)
+        x, y, dataset = format_house_dataset(dataset)
 
     n_instances = dataset.shape[0]
 
@@ -153,22 +123,64 @@ def split_data_frame(dataset):
     x = scale(x, axis=0)
     if ALGORITHM == cf.LINEAR_REG:
         y = scale(y, axis=0)
-
-        # Prepend the Bias feature column consisting of all 1's
-        x = np.reshape(
-            np.c_[np.ones(x.shape[0]), x],
-            [x.shape[0], x.shape[1] + 1]
-        )
-        y = np.reshape(y, [x.shape[0], 1])
+        x, y = prepend_bias_term(x, y)
 
     if SPLIT_METHOD is cf.SEVENTY_THIRTY:
         return seventy_thirty(x, y, n_instances)
 
-    elif SPLIT_METHOD is cf.TEN_FOLD_CROSS:
+    else:
         return ten_fold_cross(x, y, n_instances)
 
+
+def format_sum_dataset(dataset):
+    # Reduce number of instances to 100,000
+    dataset = np.delete(
+        dataset,
+        np.arange(20000, dataset.shape[0]),
+        axis=0
+    )
+
+    # Get rid of 'Instances' feature column
+    dataset = np.delete(dataset, 0, axis=1)
+
+    # Delete unecessary columns from X and Y
+    x = np.delete(dataset, range(10, 12), axis=1)
+    y = np.delete(dataset, range(10), axis=1)
+
+    # If linear regression take the 'Target' column otherwise take the
+    # 'Target Class' classification label
+    if ALGORITHM == cf.LINEAR_REG:
+        y = np.delete(y, 1, axis=1)
+
     else:
-        raise Exception('split_data_frame: no split_type set')
+        y = np.delete(y, 0, axis=1)
+        y = convert_classification_label_for_SUM(y)
+
+    return x, y, dataset
+
+
+def format_house_dataset(dataset):
+    # Remove 'id' and 'date' feature columns
+    dataset = np.delete(dataset, [0, 1], axis=1)
+
+    # Remove 'price' feature from X and everything but price from y
+    x = np.delete(dataset, 0, axis=1)
+    y = np.delete(dataset, range(1, 19), axis=1)
+    if ALGORITHM == cf.KNN:
+        y = convert_classification_label_for_housing(y)
+
+    return x, y, dataset
+
+
+def prepend_bias_term(x, y):
+    # Prepend the Bias feature column consisting of all 1's
+    x = np.reshape(
+        np.c_[np.ones(x.shape[0]), x],
+        [x.shape[0], x.shape[1] + 1]
+    )
+    y = np.reshape(y, [x.shape[0], 1])
+
+    return x, y
 
 
 def seventy_thirty(x, y, n_instances):
@@ -186,7 +198,6 @@ def ten_fold_cross(x, y, n_instances):
     y_train = []
     y_test = []
     split = int(n_instances / 10)
-    print(n_instances)
     for i in range(10):
         # Note there is a loss of accuracy here converting float to integer
         # The final cross validation set will not reach the final row but
@@ -292,7 +303,6 @@ def linear_regression_training(x_train, x_test, y_train, y_test):
 
         # Evaluate accuracy of model using test sets with MSE and MAE
         mse, mae = evaluate_mse_mae(sess, pred, x_test, y_test, X)
-        print(sess.run(W))
         sess.close()
 
     return mse, mae
@@ -307,10 +317,6 @@ def evaluate_mse_mae(sess, pred, x_test, y_test, X):
     y_pred = sess.run(pred, feed_dict={X: x_test})
     mse = tf.sqrt(tf.reduce_mean(tf.square(y_pred - y_test)))
     mae = tf.reduce_mean(tf.abs(y_pred - y_test))
-
-    plt.plot(y_test, y_pred, 'ro')
-    plt.plot(range(-2, 2), range(-2, 2))
-    plt.show()
     return sess.run(mse), sess.run(mae)
 
 
