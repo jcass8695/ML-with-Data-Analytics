@@ -7,9 +7,12 @@ Linear Regression
 	RMSE
 	Mean Absolute Error
 
-K nearest neighbours:
+K nearest neighbours Classifier:
 	Metrics:
+	f1
+	accuracy
 
-Random Forest:
+Random Forest Classifier:
 	Metrics:
-
+	f1
+	accuracy
