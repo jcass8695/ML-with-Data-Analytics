@@ -16,8 +16,8 @@ from itertools import chain
 # Disable TF warning
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-# DATASET = cf.SUM_WITHOUT_NOISE
-DATASET = cf.HOUSE_PRICES
+DATASET = cf.SUM_WITHOUT_NOISE
+# DATASET = cf.HOUSE_PRICES
 SPLIT_METHOD = cf.SEVENTY_THIRTY
 # SPLIT_METHOD = cf.TEN_FOLD_CROSS
 # ALGORITHM = cf.LINEAR_REG
@@ -44,7 +44,6 @@ def main():
     # Split the dataset into training and testing arrays
     # Will return lists of size 10 if using 10 fold cross validation
     x_train, x_test, y_train, y_test = split_data_frame(dataset)
-
     if ALGORITHM == cf.LINEAR_REG:
         mse = 0
         mae = 0
@@ -80,6 +79,7 @@ def main():
 
     elif ALGORITHM == cf.KNN:
         accuracy = 0
+        f1 = 0
         if SPLIT_METHOD == cf.TEN_FOLD_CROSS:
             for i in range(10):
                 accuracy += k_nearest_neighbours(
@@ -87,12 +87,20 @@ def main():
                     x_test[i],
                     y_train[i],
                     y_test[i]
-                )
+                )[0]
 
-                print('Average accuracy across 10 folds: {}'.format(accuracy / 10))
+                f1 += k_nearest_neighbours(
+                    x_train[i],
+                    x_test[i],
+                    y_train[i],
+                    y_test[i]
+                )[1]
+
+            print('Average accuracy across 10 folds: {}'.format(accuracy * 10))
+            print('Average F1 across 10 folds: {}'.format(f1 / 10))
 
         else:
-            accuracy = k_nearest_neighbours(
+            accuracy, f1 = k_nearest_neighbours(
                 x_train,
                 x_test,
                 y_train,
@@ -100,10 +108,10 @@ def main():
             )
 
             print('Accuracy: {}%'.format(accuracy * 100))
+            print('F1: {}'.format(f1))
 
 
 def split_data_frame(dataset):
-    n_instances = dataset.shape[0]
     if DATASET == cf.SUM_WITHOUT_NOISE:
         # Reduce number of instances to 100,000
         dataset = np.delete(
@@ -115,7 +123,7 @@ def split_data_frame(dataset):
         # Get rid of 'Instances' feature column
         dataset = np.delete(dataset, 0, axis=1)
 
-        # Delete unessecary columns from X and Y
+        # Delete unecessary columns from X and Y
         x = np.delete(dataset, range(10, 12), axis=1)
         y = np.delete(dataset, range(10), axis=1)
 
@@ -138,6 +146,8 @@ def split_data_frame(dataset):
         if ALGORITHM == cf.KNN:
             y = convert_classification_label_for_housing(y)
             print(y)
+
+    n_instances = dataset.shape[0]
 
     # Normalize the x data
     x = scale(x, axis=0)
@@ -198,11 +208,11 @@ def ten_fold_cross(x, y, n_instances):
 def convert_classification_label_for_SUM(y_data):
     vfunc = np.vectorize(lambda x:
                          {
-                             'Very Small Number': 1,
-                             'Small Number': 2,
-                             'Medium Number': 3,
-                             'Large Number': 4,
-                             'Very Large Number': 5
+                             'Very Small Number': 0,
+                             'Small Number': 0,
+                             'Medium Number': 0,
+                             'Large Number': 1,
+                             'Very Large Number': 1
                          }[x])
     return vfunc(y_data)
 
@@ -213,23 +223,27 @@ def convert_classification_label_for_housing(y_data):
     vfunc = np.vectorize(lambda x: 1 if x >= mean_house_price else 0)
     return vfunc(y_data)
 
-
+'''
+> For each point in x_test, look at it's K nearest neighbours in x_train
+> Record the indices of these neighbours
+> Pick a class for the current point in x_test by averaging the 
+  classes of the neighbours which are in y_train
+> Check the predicted class against the actual class in y_test
+'''
 def k_nearest_neighbours(x_train, x_test, y_train, y_test):
     correct_predictions = 0
+    predictions_list = []
     K = cf.K_NEIGHBOURS
+
     X_train = tf.placeholder(tf.float32, shape=[None, x_train.shape[1]])
     X_test = tf.placeholder(tf.float32, shape=[x_test.shape[1]])
-    l1_distance = tf.negative(
-        tf.reduce_sum(
-            tf.abs(tf.subtract(X_train, X_test)),
-            axis=1)
-    )
+    l1_distance = tf.negative(tf.reduce_sum(tf.abs(tf.subtract(X_train, X_test)), axis=1))
     _, indices_of_knn = tf.nn.top_k(l1_distance, k=K, sorted=False)
 
     with tf.Session() as sess:
         for index, instance in enumerate(x_test):
 
-            # Get KNN of current test point
+            # Get KNN of current test point from the test set in the training set
             nn_indices = sess.run(indices_of_knn, feed_dict={
                 X_train: x_train, X_test: instance})
 
@@ -238,14 +252,15 @@ def k_nearest_neighbours(x_train, x_test, y_train, y_test):
             for i in nn_indices:
                 average += y_train[i][0]
 
-            average = int(round(average / K))
-            if average == y_test[index]:
+            pred_class = int(round(average / K))
+            predictions_list.append(pred_class)
+            if pred_class == y_test[index]:
                 correct_predictions += 1
 
         sess.close()
-    print(correct_predictions, x_test.shape[0], sep='\n')
     accuracy = correct_predictions / x_test.shape[0]
-    return accuracy
+    f1 = evaluate_f1_score_binary_class(predictions_list, y_test)
+    return accuracy, f1
 
 
 def linear_regression_training(x_train, x_test, y_train, y_test):
@@ -298,6 +313,29 @@ def evaluate_mse_mae(sess, pred, x_test, y_test, X):
     plt.show()
     return sess.run(mse), sess.run(mae)
 
+
+def evaluate_f1_score_binary_class(predictions, y_test):
+    try:
+        true_positives = 0
+        false_positives = 0
+        false_negatives = 0
+        for pred, real in zip(predictions, y_test):
+            if pred == 1 and real == 1:
+                true_positives += 1
+
+            elif pred == 1 and real == 0:
+                false_positives += 1
+
+            elif pred == 0 and real == 1:
+                false_negatives += 1
+
+        precision = true_positives / (true_positives + false_positives)
+        recall = true_positives / (false_negatives + true_positives)
+        return (2 * precision * recall) / (precision + recall)
+
+    except ZeroDivisionError:
+        print(true_positives, false_positives, false_negatives, sep='\n')
+        return
 
 if __name__ == "__main__":
     main()
