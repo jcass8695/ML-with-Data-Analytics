@@ -16,23 +16,23 @@ from itertools import chain
 # Disable TF warning
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
-# DATASET = 'SUMDATA_NOISELESS'
-DATASET = 'HOUSE_DATA'
-# SPLIT_METHOD = cf.FLAGS['TEN_FOLD_CROSS']
-SPLIT_METHOD = cf.FLAGS['SEVENTY_THIRTY']
-# ALGORITHM = cf.FLAGS['LINEAR_REGRESSION']
-ALGORITHM = cf.FLAGS['KNN']
+# DATASET = cf.SUM_WITHOUT_NOISE
+DATASET = cf.HOUSE_PRICES
+SPLIT_METHOD = cf.SEVENTY_THIRTY
+# SPLIT_METHOD = cf.TEN_FOLD_CROSS
+# ALGORITHM = cf.LINEAR_REG
+ALGORITHM = cf.KNN
 
-LEARNING_RATE = 0.01
-EPOCHS = 1000
+LEARNING_RATE = cf.LEARNING_RATE
+EPOCHS = cf.EPOCHS
 
 
 def main():
-    if DATASET == 'SUMDATA_NOISELESS':
-        sep = ';'
+    if DATASET == cf.SUM_WITHOUT_NOISE:
+        sep = cf.SUM_CSV_SEP
 
     else:
-        sep = ','
+        sep = cf.HOUSE_CSV_SEP
 
     # Read in full dataset and convert to numpy array
     dataset = pd.read_csv(
@@ -45,10 +45,10 @@ def main():
     # Will return lists of size 10 if using 10 fold cross validation
     x_train, x_test, y_train, y_test = split_data_frame(dataset)
 
-    if ALGORITHM == cf.FLAGS['LINEAR_REGRESSION']:
+    if ALGORITHM == cf.LINEAR_REG:
         mse = 0
         mae = 0
-        if SPLIT_METHOD == cf.FLAGS['TEN_FOLD_CROSS']:
+        if SPLIT_METHOD == cf.TEN_FOLD_CROSS:
             for i in range(10):
                 mse += linear_regression_training(
                     x_train[i],
@@ -78,9 +78,9 @@ def main():
             print('RMSE: {}'.format(mse))
             print('MAE: {}'.format(mae))
 
-    elif ALGORITHM == cf.FLAGS['KNN']:
+    elif ALGORITHM == cf.KNN:
         accuracy = 0
-        if SPLIT_METHOD == cf.FLAGS['TEN_FOLD_CROSS']:
+        if SPLIT_METHOD == cf.TEN_FOLD_CROSS:
             for i in range(10):
                 accuracy += k_nearest_neighbours(
                     x_train[i],
@@ -104,7 +104,7 @@ def main():
 
 def split_data_frame(dataset):
     n_instances = dataset.shape[0]
-    if DATASET == 'SUMDATA_NOISELESS':
+    if DATASET == cf.SUM_WITHOUT_NOISE:
         # Reduce number of instances to 100,000
         dataset = np.delete(
             dataset,
@@ -121,7 +121,7 @@ def split_data_frame(dataset):
 
         # If linear regression take the 'Target' column otherwise take the
         # 'Target Class' classification label
-        if ALGORITHM == cf.FLAGS['LINEAR_REGRESSION']:
+        if ALGORITHM == cf.LINEAR_REG:
             y = np.delete(y, 1, axis=1)
 
         else:
@@ -135,13 +135,13 @@ def split_data_frame(dataset):
         # Remove 'price' feature from X and everything but price from y
         x = np.delete(dataset, 0, axis=1)
         y = np.delete(dataset, range(1, 19), axis=1)
-        if ALGORITHM == cf.FLAGS['KNN']:
-            y = convert_classification_label_for_Housing(y)
+        if ALGORITHM == cf.KNN:
+            y = convert_classification_label_for_housing(y)
             print(y)
 
     # Normalize the x data
     x = scale(x, axis=0)
-    if ALGORITHM == cf.FLAGS['LINEAR_REGRESSION']:
+    if ALGORITHM == cf.LINEAR_REG:
         y = scale(y, axis=0)
 
         # Prepend the Bias feature column consisting of all 1's
@@ -151,10 +151,10 @@ def split_data_frame(dataset):
         )
         y = np.reshape(y, [x.shape[0], 1])
 
-    if SPLIT_METHOD is cf.FLAGS['SEVENTY_THIRTY']:
+    if SPLIT_METHOD is cf.SEVENTY_THIRTY:
         return seventy_thirty(x, y, n_instances)
 
-    elif SPLIT_METHOD is cf.FLAGS['TEN_FOLD_CROSS']:
+    elif SPLIT_METHOD is cf.TEN_FOLD_CROSS:
         return ten_fold_cross(x, y, n_instances)
 
     else:
@@ -207,7 +207,7 @@ def convert_classification_label_for_SUM(y_data):
     return vfunc(y_data)
 
 
-def convert_classification_label_for_Housing(y_data):
+def convert_classification_label_for_housing(y_data):
     mean_house_price = y_data.mean(axis=0)
     print(mean_house_price)
     vfunc = np.vectorize(lambda x: 1 if x >= mean_house_price else 0)
@@ -266,7 +266,7 @@ def linear_regression_training(x_train, x_test, y_train, y_test):
     cost = tf.reduce_mean(tf.square(pred - Y))
 
     # Optimize the weights after each prediction so as to minimize the MSE
-    optimizer = tf.train.GradientDescentOptimizer(LEARNING_RATE).minimize(cost)
+    optimizer = tf.train.GradientDescentOptimizer(cf.LEARNING_RATE).minimize(cost)
     init = tf.global_variables_initializer()
 
     with tf.Session() as sess:
@@ -284,7 +284,7 @@ def linear_regression_training(x_train, x_test, y_train, y_test):
 
 
 def run_optimization(sess, optimizer, x_train, y_train, X, Y):
-    for _ in range(EPOCHS):
+    for _ in range(cf.EPOCHS):
         sess.run(optimizer, feed_dict={X: x_train, Y: y_train})
 
 
