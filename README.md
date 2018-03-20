@@ -1,9 +1,8 @@
 # Assignment 1 - Task 2 Checklist, for Dan and Jack
-## Cross off as we go along (surround text with ~~ ~~)
 
 1. General
 
-   - ~~choose datasets~~
+   - choose datasets
      - SUM w/o noise and KC House Data
    - choose metrics
      - Linear Regression: MSE, MAE
